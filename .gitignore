@@ -1,0 +1,18 @@
+# Cargo build output. Unanchored so it covers nested standalone
+# workspaces too — `crates/cast-lsp/target/` and
+# `crates/cast-web/target/` each carry their own build outputs since
+# both crates have their own `[workspace]` blocks (see the parent
+# `Cargo.toml`'s `exclude`).
+target/
+
+# Editor state
+.idea/
+.vscode/
+*.swp
+
+# OS noise
+.DS_Store
+
+# MemPalace per-project files (issue #185)
+mempalace.yaml
+entities.json

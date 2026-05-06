@@ -1,0 +1,58 @@
+[package]
+name = "cast-lsp"
+description = "Experimental: Language Server Protocol implementation for cast::*! annotations. Surfaces unresolved anchors, parse errors, and pipeline errors as LSP diagnostics in any LSP-aware editor. Peer to cast-extract and cast-watch; both enable the cast crate's `analysis` feature."
+keywords = [
+  "architecture",
+  "lsp",
+  "language-server",
+  "concept",
+  "rust-analyzer",
+]
+categories = ["command-line-utilities", "development-tools"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "cast_lsp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cast-lsp"
+path = "src/main.rs"
+
+[dependencies]
+# cast — vocabulary AND analysis library, both shipped as one crate.
+# `features = ["analysis"]` matches cast-extract and cast-watch; the
+# three binaries are peers over a shared analyzer so an LSP diagnostic,
+# a CLI run, and a daemon snapshot can never disagree about what a
+# cast::*! invocation means. Path dep across workspace boundaries —
+# Cargo accepts that.
+cast = { package = "cast-spec", path = "../cast-spec", version = "0.1", features = [
+  "analysis",
+] }
+
+# LSP plumbing. tower-lsp gives us the LanguageServer trait, JSON-RPC
+# transport over stdio, and tokio integration in one piece.
+tower-lsp = "0.20"
+
+# Async runtime — single-threaded current_thread is enough; the heavy
+# RA load runs on the blocking pool via spawn_blocking.
+tokio = { version = "1", features = [
+  "rt",
+  "macros",
+  "sync",
+  "io-std",
+  "io-util",
+] }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

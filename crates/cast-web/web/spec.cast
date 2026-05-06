@@ -1,0 +1,227 @@
+// cast-web frontend per-subtree concept catalog.
+//
+// Two purposes:
+//   1. Extend the inline `cast_web` umbrella concept with one
+//      io_continues_in! edge per top-level UI surface init function —
+//      concept list / concept detail / mailbox / watcher log — so the
+//      canonical tree's umbrella node fans out into the four planes
+//      without leaving the parent.
+//   2. Declare a sibling sub-concept, `cast_web_frontend`, anchored
+//      at the Rust `frontend` module that embeds and serves the
+//      bundle. Its io edges enumerate the render/refresh helpers
+//      below the surface-init layer, so a `walk` from
+//      `cast_web_frontend` traverses into the TS internals.
+//
+// Anchors are absolute (`<crate>::<module>::<item>`) per the
+// .cast-file convention pinned in
+// crates/cast-spec/src/spec_source/cast_file.rs.
+
+// ── Extend the umbrella with one surface-init edge per pane ──────────
+
+cast::io::continues_in! {
+    target:  "crates/cast-web/web/src/main.ts",
+    lang:    typescript,
+    anchor:  "initConcepts",
+    concept: "cast_web",
+    why:     "Concept list (left pane). Opens the WebSocket to \
+              cast-watch over `/ws`, sends \
+              `query from:concepts dim:full`, and renders the sorted \
+              concept names with status pips populated by \
+              `refreshConceptStatus`.",
+    tags:    ["cast_web"],
+}
+
+cast::io::continues_in! {
+    target:  "crates/cast-web/web/src/main.ts",
+    lang:    typescript,
+    anchor:  "initDetailControls",
+    concept: "cast_web",
+    why:     "Concept detail controls (middle pane header). Wires the \
+              radius slider and dim selector; both rerun `renderDetail` \
+              against the currently-selected concept after a short \
+              debounce.",
+    tags:    ["cast_web"],
+}
+
+cast::io::continues_in! {
+    target:  "crates/cast-web/web/src/main.ts",
+    lang:    typescript,
+    anchor:  "initMailbox",
+    concept: "cast_web",
+    why:     "User ↔ assistant chat (top-right pane). Drives the \
+              `/mailbox/{messages,meta,stream,send,clear}` endpoints \
+              and listens on the SSE stream for new files written by \
+              the external editing actor (the assistant).",
+    tags:    ["cast_web"],
+}
+
+cast::io::continues_in! {
+    target:  "crates/cast-web/web/src/main.ts",
+    lang:    typescript,
+    anchor:  "initWatcherLog",
+    concept: "cast_web",
+    why:     "Watcher log (bottom-right pane). Shows the assistant's \
+              `/watcher/query` traffic by fetching \
+              `/watcher/log/entries` and subscribing to the SSE \
+              stream so new turns append live.",
+    tags:    ["cast_web"],
+}
+
+// ── Sibling sub-concept: the frontend itself ─────────────────────────
+
+cast::concept! {
+    name: "cast_web_frontend",
+    summary: "The browser-side half of cast-web. Plain TypeScript with \
+              no framework and no bundler — `tsc` compiles \
+              `web/src/*.ts` to `web/dist/*.js` one-to-one, the \
+              browser loads them as native ES modules via \
+              `<script type=\"module\">`, and `rust-embed` (in the \
+              Rust `frontend` module) bakes `web/dist/*` plus \
+              `index.html` into the cast-web release binary. Three \
+              planes: concept list (left), concept detail or canonical \
+              tree (middle), and the right-hand stack of user/assistant \
+              chat above the watcher log. Sibling sub-concept of the \
+              `cast_web` umbrella; tagged the same so \
+              `graph_for_tag {tag:\"cast_web\"}` surfaces the whole \
+              neighbourhood, and the umbrella's surface-init edges \
+              point at the same `init*()` functions covered in finer \
+              detail here.",
+    anchors: [
+        cast_web::frontend,
+        cast_web::frontend::index,
+        cast_web::frontend::asset,
+    ],
+    tags: ["cast_web"],
+}
+
+cast::io::continues_in! {
+    target:  "crates/cast-web/web/src/main.ts",
+    lang:    typescript,
+    anchor:  "main",
+    concept: "cast_web_frontend",
+    why:     "Entry point; calls each of the four `init*()` functions \
+              in order. Wired to the bundle by \
+              `<script type=\"module\" src=\"/static/main.js\">` in \
+              `web/index.html`.",
+    tags:    ["cast_web"],
+}
+
+// Concept list helpers
+cast::io::continues_in! {
+    target:  "crates/cast-web/web/src/main.ts",
+    lang:    typescript,
+    anchor:  "renderConcepts",
+    concept: "cast_web_frontend",
+    why:     "Renders the concept-list <li>s with a status pip and a \
+              click handler that selects the concept (`selectConcept`).",
+    tags:    ["cast_web"],
+}
+
+cast::io::continues_in! {
+    target:  "crates/cast-web/web/src/main.ts",
+    lang:    typescript,
+    anchor:  "refreshConceptStatus",
+    concept: "cast_web_frontend",
+    why:     "Asks the watcher for unresolved paths, builds a per-site \
+              count, and updates each concept's status pip plus the \
+              `N unresolved` badge. Re-runs after every snapshot \
+              change.",
+    tags:    ["cast_web"],
+}
+
+// Concept detail helpers
+cast::io::continues_in! {
+    target:  "crates/cast-web/web/src/main.ts",
+    lang:    typescript,
+    anchor:  "renderDetail",
+    concept: "cast_web_frontend",
+    why:     "Single-concept detail view: declarations with per-anchor \
+              ✓/✗ markers, edges with concept-walk targets, and \
+              radius-bound neighbours. Backed by `kind: walk` over \
+              `/watcher/query`.",
+    tags:    ["cast_web"],
+}
+
+cast::io::continues_in! {
+    target:  "crates/cast-web/web/src/main.ts",
+    lang:    typescript,
+    anchor:  "showCanonicalTree",
+    concept: "cast_web_frontend",
+    why:     "Default middle-pane view when no concept is selected. \
+              Fetches `kind: tree` from the watcher and recursively \
+              renders the per-workspace concept hierarchy.",
+    tags:    ["cast_web"],
+}
+
+cast::io::continues_in! {
+    target:  "crates/cast-web/web/src/main.ts",
+    lang:    typescript,
+    anchor:  "renderTreeNode",
+    concept: "cast_web_frontend",
+    why:     "Per-node render in the canonical tree, recursive on \
+              children. Decides expander state, count badges, warning \
+              chips, and visibility of embodied-leaf anchors.",
+    tags:    ["cast_web"],
+}
+
+cast::io::continues_in! {
+    target:  "crates/cast-web/web/src/main.ts",
+    lang:    typescript,
+    anchor:  "loadExpand",
+    concept: "cast_web_frontend",
+    why:     "Lazy fetch and render of the `tree_expand` payload when \
+              a count badge is clicked. Lists the concept's attributed \
+              non-concept macros (rules, anti-patterns, comparisons, \
+              etc.) under the node.",
+    tags:    ["cast_web"],
+}
+
+// Mailbox helpers
+cast::io::continues_in! {
+    target:  "crates/cast-web/web/src/main.ts",
+    lang:    typescript,
+    anchor:  "refreshMessages",
+    concept: "cast_web_frontend",
+    why:     "Fetches `/mailbox/messages` and renders each as an <li>; \
+              role-tagged with `msg-user` / `msg-assistant` so the CSS \
+              tints them differently.",
+    tags:    ["cast_web"],
+}
+
+cast::io::continues_in! {
+    target:  "crates/cast-web/web/src/main.ts",
+    lang:    typescript,
+    anchor:  "refreshMeta",
+    concept: "cast_web_frontend",
+    why:     "Polls `/mailbox/meta` for liveness — drives the \
+              `claude session attached / detached` indicator and \
+              gates the send button.",
+    tags:    ["cast_web"],
+}
+
+// Watcher-log helpers
+cast::io::continues_in! {
+    target:  "crates/cast-web/web/src/main.ts",
+    lang:    typescript,
+    anchor:  "refreshWatcherLog",
+    concept: "cast_web_frontend",
+    why:     "Fetches `/watcher/log/entries`, runs each turn through \
+              `querySummary` / `responseSummary`, and renders the \
+              watcher-log <li>s.",
+    tags:    ["cast_web"],
+}
+
+cast::continues_in! {
+    target:  cast_stdlib::state_data::read_model::ReadModel,
+    concept: "cast_web_frontend",
+    why:     "The frontend is a read model over the analyzer state: \
+              every `init*()` and `refresh*()` function pulls a \
+              query-shaped projection of the snapshot \
+              (concepts, tree, unresolved paths, mailbox, watcher-log) \
+              and renders it. None of these calls write — they only \
+              shape the source-of-truth Snapshot for the panes that \
+              display it. Freshness is bounded by the SSE stream and \
+              the polling interval, both documented at each call \
+              site.",
+    tags:    ["cast_web"],
+}

@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>cast-web</title>
+    <style>
+      :root {
+        --bg: #0d1117;
+        --bg-elev: #161b22;
+        --bg-elev-2: #1c232c;
+        --fg: #e6edf3;
+        --fg-muted: #8b949e;
+        --line: #30363d;
+        --tag: #7d8590;
+        --accent: #58a6ff;
+        --accent-soft: #1f4f8a;
+        --warn-bg: #4d2c0a;
+        --warn-fg: #ffc864;
+      }
+      html, body { height: 100%; margin: 0; }
+      body {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 17px;
+        line-height: 1.55;
+        padding: 1rem;
+        max-width: 96rem;
+        margin: 0 auto;
+        color: var(--fg);
+        background: var(--bg);
+        display: flex;
+        flex-direction: column;
+        box-sizing: border-box;
+      }
+      ::selection { background: var(--accent-soft); }
+      h1 {
+        font-size: 1.25rem;
+        margin: 0 0 0.5rem;
+        color: var(--fg);
+      }
+      h2 {
+        font-size: 0.85rem;
+        margin: 0 0 0.5rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--fg-muted);
+      }
+      .layout {
+        display: grid;
+        /* `minmax(0, 1fr)` lets the flexible columns/rows collapse
+           below their children's min-content size. Without it, a
+           growing list inside one cell would push the cell out and
+           squeeze its siblings (overflow-y on the inner list never
+           gets a chance to kick in). */
+        grid-template-columns: 18rem minmax(0, 1fr) 26rem;
+        gap: 1rem;
+        flex: 1;
+        min-height: 0;
+      }
+      .layout > section {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        min-width: 0;
+      }
+      /* `.layout > section.right` is needed (not just `.right`) so
+         this beats `.layout > section { display: flex }` on
+         specificity — otherwise the right column silently stays a
+         flex column whose rows size to content (the watcher-log
+         keeps growing and squeezes the chat). Specificity here:
+         (0,2,1) > (0,1,1).
+
+         Row ratio is 85/15 (chat / watcher-log), not 1/1. The chat
+         panel's effective message-viewing area is already shrunk by
+         the meta-line, textarea, and send button stacked under the
+         message list, so an even split leaves very little room to
+         actually read messages. The watcher log is debug-shape side
+         traffic the human only glances at, so it's fine to compress
+         it. See `cast::concept! chat_priority_over_watcher_log` in
+         lib.rs. */
+      .layout > section.right {
+        display: grid;
+        grid-template-rows: minmax(0, 17fr) minmax(0, 3fr);
+        gap: 1rem;
+        min-height: 0;
+        min-width: 0;
+      }
+      .right > section {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      ul.list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        overflow-y: auto;
+        flex: 1;
+        min-height: 0;
+        border: 1px solid var(--line);
+        border-radius: 0.375rem;
+        background: var(--bg-elev);
+      }
+      ul.list li {
+        padding: 0.4rem 0.6rem;
+        border-bottom: 1px solid var(--line);
+        cursor: default;
+        overflow-wrap: anywhere;
+      }
+      ul.list li:last-child { border-bottom: none; }
+      ul.list li.clickable { cursor: pointer; }
+      ul.list li.clickable:hover { background: var(--bg-elev-2); }
+      ul.list li.selected {
+        background: var(--accent-soft);
+        color: var(--fg);
+      }
+      /* Status pip before each concept name. Single inline-block element
+         so the layout doesn't shift while status loads — pre-render with
+         class="status loading" (gray) and swap to ok/unresolved once the
+         /watcher/query for unresolved paths returns. */
+      .status {
+        display: inline-block;
+        width: 0.6em;
+        height: 0.6em;
+        border-radius: 50%;
+        margin-right: 0.5em;
+        background: var(--fg-muted);
+        vertical-align: middle;
+      }
+      .status.ok        { background: #3fb950; }   /* GitHub-dark green */
+      .status.unresolved { background: #f85149; }   /* GitHub-dark red   */
+      .status.loading   { background: var(--fg-muted); opacity: 0.4; }
+      /* `#f85149` (GitHub-dark danger) is fine as a *fill* color
+         for the small dot, but as TEXT on the dark background it's
+         too saturated and hard to read at this size. `#ffa198` is
+         the GitHub-dark "danger fg on dark" — same red semantic,
+         readable for prose. */
+      .status-count {
+        color: #ffa198;
+        font-size: 0.85em;
+        margin-left: 0.4em;
+      }
+      /* Per-anchor outcome markers in the detail pane. ✓/✗ glyphs
+         carry the semantic; tooltip via title= attribute carries the
+         error string for unresolved ones (browser-native — no JS
+         positioning needed). */
+      .anchor {
+        cursor: help;
+      }
+      .anchor-ok { color: #3fb950; }
+      .anchor-unresolved { color: #ffa198; }
+      /* Primitive anchors — same OK/unresolved colour but with the
+         tagging shade muted-grey via a tag-prefix glyph (◇) and
+         italicised so the role reads at a glance. */
+      .anchor-primitive { font-style: italic; }
+      .anchor-primitive.anchor-ok { color: #7d8590; }
+      .back-button {
+        background: var(--bg-elev);
+        color: var(--fg);
+        border: 1px solid var(--line);
+        border-radius: 0.375rem;
+        padding: 0.3rem 0.7rem;
+        font-family: inherit;
+        font-size: 0.85rem;
+        cursor: pointer;
+        margin-bottom: 0.75rem;
+      }
+      .back-button:hover { border-color: var(--accent); }
+      .graph-header {
+        font-size: 0.85rem;
+        color: var(--fg-muted);
+        margin-bottom: 0.5rem;
+      }
+      svg.graph {
+        flex: 1;
+        min-height: 20rem;
+      }
+      svg.graph .graph-node { cursor: pointer; }
+      svg.graph .graph-node:hover circle { stroke: var(--accent); stroke-width: 2; }
+      svg.graph .graph-node:hover text { fill: var(--accent); }
+
+      /* Canonical concept tree (replaces the old force-directed graph
+         in the middle pane when no concept is selected). One tree per
+         workspace, rooted at the `cast::concept!` declared in
+         `Cast.cast`. Concepts nest by longest-prefix-match on embodied
+         anchors; primitives are leaves with optional `→ embodied_by`
+         cross-references. */
+      .tree {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        font-size: 0.9rem;
+      }
+      .tree-node {
+        margin: 0.05rem 0;
+      }
+      .tree-head {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.1rem 0;
+      }
+      .tree-expander {
+        display: inline-block;
+        width: 1em;
+        text-align: center;
+        color: var(--fg-muted);
+        cursor: default;
+      }
+      .tree-expander.has-children { cursor: pointer; }
+      .tree-expander.has-children:hover { color: var(--accent); }
+      .tree-name {
+        color: var(--fg);
+        cursor: pointer;
+      }
+      .tree-name:hover { color: var(--accent); text-decoration: underline; }
+      .tree-name.selected { color: var(--accent); font-weight: bold; }
+      .tree-count {
+        font-size: 0.75rem;
+        color: var(--fg-muted);
+        background: var(--bg-elev-2);
+        padding: 0.05em 0.4em;
+        border-radius: 0.25rem;
+        cursor: pointer;
+      }
+      .tree-count:hover { color: var(--accent); border-color: var(--accent); }
+      .tree-tags {
+        display: flex;
+        gap: 0.3em;
+        font-size: 0.75rem;
+      }
+      .tree-tags .tag-chip {
+        color: var(--tag);
+        background: var(--bg-elev-2);
+        padding: 0.05em 0.4em;
+        border-radius: 0.25rem;
+      }
+      .warning-chip {
+        font-size: 0.75rem;
+        background: var(--warn-bg);
+        color: var(--warn-fg);
+        padding: 0.05em 0.4em;
+        border-radius: 0.25rem;
+        cursor: help;
+      }
+      .warning-chip.warning-undeclared { color: #ffa198; }
+      .warning-chip.warning-target_not_in_anchors { color: #ffa198; }
+      .tree-children {
+        margin-left: 1.4rem;
+        border-left: 1px solid var(--line);
+        padding-left: 0.6rem;
+      }
+      .tree-children.collapsed { display: none; }
+      .tree-anchors {
+        list-style: none;
+        margin: 0 0 0.2rem 1.4rem;
+        padding: 0;
+        font-size: 0.8rem;
+      }
+      .tree-anchors li {
+        padding: 0.05rem 0;
+        color: var(--fg-muted);
+      }
+      .tree-anchors li.role-embodied { color: #3fb950; }
+      .tree-anchors li.role-primitive { color: var(--tag); }
+      .tree-anchors code {
+        font-family: inherit;
+        color: inherit;
+      }
+      .tree-xref {
+        margin-left: 0.4rem;
+        color: var(--accent);
+        cursor: pointer;
+      }
+      .tree-xref:hover { text-decoration: underline; }
+      .tree-expanded-macros {
+        margin-left: 1.4rem;
+        margin-top: 0.2rem;
+        padding-left: 0.6rem;
+        border-left: 1px dashed var(--line);
+        font-size: 0.8rem;
+      }
+      .tree-expanded-macros .macro-row {
+        padding: 0.1rem 0;
+      }
+      .tree-expanded-macros .macro-kind {
+        color: var(--accent);
+        font-weight: bold;
+        margin-right: 0.5rem;
+      }
+      .tree-expanded-macros .macro-loc {
+        color: var(--fg-muted);
+      }
+      .tag {
+        color: var(--tag);
+        margin-left: 0.5rem;
+        font-size: 0.85em;
+      }
+      .empty {
+        color: var(--fg-muted);
+        font-style: italic;
+        text-align: center;
+      }
+      .meta-line {
+        font-size: 0.85rem;
+        color: var(--fg-muted);
+        margin: 0 0 0.5rem;
+        flex-shrink: 0;
+      }
+      .meta-line.detached {
+        background: var(--warn-bg);
+        color: var(--warn-fg);
+        padding: 0.35rem 0.6rem;
+        border-radius: 0.375rem;
+      }
+      .role-user {
+        font-weight: bold;
+        color: var(--accent);
+      }
+      .role-assistant {
+        color: var(--fg);
+      }
+      /* Tint each chat message by role so the back-and-forth reads at
+         a glance. Kept subtle to stay inside the GitHub-dark palette;
+         user gets a cool blue lift, assistant a warmer neutral. */
+      ul#messages li.msg-user {
+        background: #182233;
+      }
+      ul#messages li.msg-assistant {
+        background: #1f2228;
+      }
+      .body {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        margin: 0.35rem 0 0;
+        color: var(--fg);
+      }
+      form#send {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        margin-top: 0.5rem;
+        flex-shrink: 0;
+      }
+      form#send textarea {
+        font-family: inherit;
+        font-size: 0.95rem;
+        padding: 0.5rem;
+        border: 1px solid var(--line);
+        border-radius: 0.375rem;
+        min-height: 4rem;
+        resize: vertical;
+        background: var(--bg-elev);
+        color: var(--fg);
+      }
+      form#send textarea:focus {
+        outline: 1px solid var(--accent);
+        outline-offset: -1px;
+      }
+      form#send .button-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      form#send button {
+        padding: 0.4rem 1rem;
+        font-family: inherit;
+        font-size: 0.9rem;
+        background: var(--bg-elev);
+        color: var(--fg);
+        border: 1px solid var(--line);
+        border-radius: 0.375rem;
+        cursor: pointer;
+      }
+      form#send button:hover:not(:disabled) { border-color: var(--accent); }
+      form#send button:disabled { opacity: 0.5; cursor: not-allowed; }
+      /* The clear button is dangerous (wipes the thread); make it look
+         that way without screaming for attention while idle. */
+      form#send button#clear-button {
+        color: var(--fg-muted);
+        font-size: 0.8rem;
+        padding: 0.3rem 0.6rem;
+      }
+      form#send button#clear-button:hover:not(:disabled) {
+        border-color: #f85149;
+        color: #ffa198;
+      }
+
+      /* Concept detail */
+      .detail {
+        flex: 1;
+        min-height: 0;
+        min-width: 0;
+        overflow-y: auto;
+        overflow-wrap: anywhere;
+        border: 1px solid var(--line);
+        border-radius: 0.375rem;
+        background: var(--bg-elev);
+        padding: 1rem;
+        /* flex-column so the embedded SVG can `flex: 1` and fill the
+           remaining vertical space when in graph mode; in detail mode
+           the children pile naturally and overflow-y scrolls. */
+        display: flex;
+        flex-direction: column;
+      }
+      .detail h3 {
+        margin: 0 0 0.5rem;
+        font-size: 1.1rem;
+        color: var(--accent);
+      }
+      .detail .summary { margin: 0 0 1rem; }
+      .detail .field-label {
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 0.05em;
+        color: var(--fg-muted);
+        margin-top: 1rem;
+      }
+      .detail ul.bare {
+        list-style: none;
+        padding: 0;
+        margin: 0.25rem 0;
+      }
+      .detail ul.bare li {
+        padding: 0.15rem 0;
+        font-size: 0.9rem;
+      }
+      .detail .neighbor {
+        cursor: pointer;
+        color: var(--accent);
+      }
+      .detail .neighbor:hover { text-decoration: underline; }
+      .controls {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        margin-bottom: 0.5rem;
+        flex-shrink: 0;
+        font-size: 0.85rem;
+        color: var(--fg-muted);
+      }
+      .controls input[type="range"] { flex: 1; min-width: 0; }
+      .controls span.value { min-width: 2.5rem; text-align: right; color: var(--fg); }
+
+      /* Watcher log */
+      .turn {
+        padding: 0.5rem 0.6rem;
+        border-bottom: 1px solid var(--line);
+        font-size: 0.85rem;
+      }
+      .turn:last-child { border-bottom: none; }
+      .turn .head {
+        color: var(--fg-muted);
+        margin-bottom: 0.25rem;
+      }
+      .turn .q {
+        color: var(--accent);
+        font-weight: bold;
+      }
+      .turn .r {
+        color: var(--fg);
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 6rem;
+        overflow-y: auto;
+        background: var(--bg-elev-2);
+        border-radius: 0.25rem;
+        padding: 0.25rem 0.4rem;
+        margin-top: 0.25rem;
+      }
+
+      /* Dark scrollbars */
+      ul.list, .detail, .turn .r {
+        scrollbar-color: var(--line) transparent;
+        scrollbar-width: thin;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>cast-web</h1>
+
+    <div class="layout">
+      <section>
+        <h2>concepts</h2>
+        <ul id="concepts" class="list"><li class="empty">connecting…</li></ul>
+      </section>
+
+      <section>
+        <h2>concept detail</h2>
+        <div class="controls">
+          <label for="radius-slider">radius</label>
+          <input id="radius-slider" type="range" min="0" max="2" step="0.1" value="2" />
+          <span id="radius-value" class="value">2.0</span>
+          <label for="dim-select">dim</label>
+          <select id="dim-select">
+            <option value="summary">summary</option>
+            <option value="name_only">name_only</option>
+            <option value="full" selected>full</option>
+          </select>
+        </div>
+        <div id="detail" class="detail"><div class="empty">select a concept on the left</div></div>
+      </section>
+
+      <section class="right">
+        <section>
+          <h2>mailbox (user ↔ assistant)</h2>
+          <div id="meta" class="meta-line">checking…</div>
+          <ul id="messages" class="list"><li class="empty">no messages</li></ul>
+          <form id="send" autocomplete="off">
+            <textarea id="body" placeholder="write a user message… (Ctrl+Enter to send)"></textarea>
+            <div class="button-row">
+              <button id="clear-button" type="button" title="Remove every numbered message file in the mailbox; keeps meta.json. Asks for confirmation.">clear</button>
+              <button id="send-button" type="submit" disabled>send</button>
+            </div>
+          </form>
+        </section>
+        <section>
+          <h2>watcher log (assistant ↔ cast-watch)</h2>
+          <ul id="watcher-log" class="list"><li class="empty">no queries yet</li></ul>
+        </section>
+      </section>
+    </div>
+
+    <script type="module" src="/static/main.js"></script>
+  </body>
+</html>

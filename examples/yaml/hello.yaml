@@ -1,0 +1,11 @@
+# YAML branch of cast's examples corpus. Pointed at by the
+# `yaml_examples` concept via cast::io::continues_in!.
+
+greeting:
+  language: en
+  salutation: Hello
+  message: "Hello, World!"
+
+metadata:
+  version: 1
+  author: cast-spec

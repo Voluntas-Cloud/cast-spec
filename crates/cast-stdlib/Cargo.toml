@@ -1,0 +1,15 @@
+[package]
+name = "cast-stdlib"
+description = "Experimental: A curated library of reusable architectural concepts expressed in cast vocabulary. Downstream projects pull this in and reference its concepts via cast::continues_in! rather than re-deriving the same patterns inline."
+keywords = ["architecture", "annotations", "concepts", "patterns", "cast"]
+categories = ["development-tools", "rust-patterns"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+cast = { package = "cast-spec", path = "../cast-spec", version = "0.1" }

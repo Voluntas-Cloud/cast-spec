@@ -1,0 +1,82 @@
+[package]
+name = "cast-web"
+description = "Experimental: Small browser UI + LLM-mailbox shim over a single cast-watch socket. To cast what gitweb is to git: a single-purpose, readable reference UI; if you want a platform, fork or build a sibling that also speaks cast-watch."
+keywords = ["architecture", "concept", "browser", "llm", "watcher"]
+categories = ["command-line-utilities", "development-tools", "web-programming"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+
+# Strip unreviewed dev helpers and the 23 MB tracked TypeScript bootstrap
+# from the published tarball. `web/dist/*` and `web/index.html` are what
+# rust-embed bakes into the binary at build time; node_modules and the
+# dev/* shell scripts have no role on the consumer's machine.
+exclude = [
+    "dev/**",
+    "web/node_modules/**",
+    "web/package-lock.json",
+    "web/spec.cast",
+]
+
+[lib]
+name = "cast_web"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cast-web"
+path = "src/main.rs"
+
+[dependencies]
+# cast — vocabulary only. cast-web does not run the analyzer; it relays
+# JSON-line traffic to a separate cast-watch process. Default features
+# keep this dep zero-cost.
+cast = { package = "cast-spec", path = "../cast-spec", version = "0.1" }
+
+# Async runtime. Single-threaded would suffice; multi-threaded for
+# convenience under axum.
+tokio = { version = "1", features = [
+  "rt-multi-thread",
+  "macros",
+  "net",
+  "io-util",
+  "sync",
+  "time",
+  "signal",
+  "fs",
+] }
+
+# HTTP + WebSocket server.
+axum = { version = "0.7", features = ["ws"] }
+tower-http = { version = "0.5", features = ["fs", "trace"] }
+futures = "0.3"
+
+# Filesystem watching for the mailbox directory.
+notify = "6"
+
+# Embed the compiled-from-TypeScript bundle into the release binary.
+rust-embed = { version = "8", features = ["debug-embed", "include-exclude"] }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Bridge a tokio broadcast receiver into an axum SSE stream.
+tokio-stream = { version = "0.1", features = ["sync"] }
+
+# Mailbox timestamps — read meta.json's last_heartbeat_at and decide
+# whether a Claude session is currently attached.
+chrono = { version = "0.4", default-features = false, features = [
+  "clock",
+  "serde",
+] }
+
+[dev-dependencies]
+indoc = "2"

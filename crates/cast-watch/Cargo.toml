@@ -1,0 +1,57 @@
+[package]
+name = "cast-watch"
+description = "Experimental: Live, file-watching daemon for cast::*! annotations — maintains an incremental concept graph and exposes a query socket for LLMs and editor tooling. Peer to cast-extract; both enable the cast crate's `analysis` feature."
+keywords = ["architecture", "watcher", "daemon", "concept", "llm"]
+categories = ["command-line-utilities", "development-tools", "filesystem"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "cast_watch"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cast-watch"
+path = "src/main.rs"
+
+[dependencies]
+# cast — vocabulary AND analysis library, both shipped as one crate.
+# `features = ["analysis"]` turns on the parser, validator, graph, and
+# RA loader. The CLI sibling `cast-extract` enables the same feature;
+# they're peer binaries over a shared lib so neither depends on the
+# other and they can never disagree about what a cast::*! invocation
+# means. See `cast::anti_pattern! shell_out_to_extract`.
+cast = { package = "cast-spec", path = "../cast-spec", version = "0.1", features = ["analysis"] }
+
+# File-watching. notify uses inotify on Linux; events arrive as a stream
+# that the watcher classifies and dispatches into the tiered analysis.
+notify = "6"
+
+# Async runtime — single-threaded is plenty for a dev tool: file events
+# and a small number of query connections.
+tokio = { version = "1", features = ["rt", "macros", "net", "io-util", "sync", "time", "signal"] }
+
+# Macro-only reparse uses syn for body parsing, mirroring cast's
+# analysis-feature parser stage. The heavy RA load goes through cast's
+# library surface (load_projects + run_multi_root_analysis).
+syn         = { version = "2", features = ["full", "extra-traits", "visit"] }
+proc-macro2 = { version = "1", features = ["span-locations"] }
+
+serde       = { version = "1", features = ["derive"] }
+serde_json  = "1"
+# YAML rendering for the `output_format` ladder — see cast::concept!
+# `output_format` and the rule pinning `dim` and `format` as
+# orthogonal axes. cast-spec already has its own `cast::emit::Format`
+# for cast-extract's CLI; cast-watch's wire formats are query-shaped
+# and live separately, but reuse `serde_yaml` here.
+serde_yaml  = "0.9"
+anyhow      = "1"
+thiserror   = "1"
+clap        = { version = "4", features = ["derive"] }
+tracing     = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

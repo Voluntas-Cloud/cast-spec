@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/cast-extract",
+  "crates/cast-os-stdlib",
+  "crates/cast-spec",
+  "crates/cast-stdlib",
+  "crates/cast-watch",
+  "crates/cast-lsp",
+  "crates/cast-web",
+]
+
+# Shared metadata. Each crate inherits with `field.workspace = true`.
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Camilla Randal <camilla@openfirm.io>"]
+repository = "https://github.com/Voluntas-Cloud/cast-spec"
+homepage = "https://github.com/Voluntas-Cloud/cast-spec"
+rust-version = "1.75"

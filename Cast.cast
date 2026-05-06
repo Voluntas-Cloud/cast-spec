@@ -1,0 +1,59 @@
+// Cast.cast — workspace umbrella concept for the cast project.
+//
+// Anchors are deliberately absolute (no `crate::` / `self::`) per the
+// `.cast`-file convention pinned in
+// crates/cast-spec/src/spec_source/cast_file.rs.
+//
+// This block names the project itself. Each per-crate concept declared
+// inline in `<crate>/src/lib.rs` (`cast_watch_daemon`, `cast_lsp_server`,
+// `cast_web`, etc.) is a child of this umbrella in the canonical concept
+// tree by virtue of anchoring at code under one of these crate-root
+// modules.
+
+cast::concept! {
+    name: "cast",
+    summary: "A vocabulary of macros for annotating Rust code with the \
+              concepts, rules, and anti-patterns it embodies, plus an \
+              analyzer that turns those annotations into a checked \
+              concept graph. The macros (`cast::concept!`, `cast::rule!`, \
+              `cast::anti_pattern!`, `cast::compare!`, `cast::pipeline!`, \
+              `cast::tier!`, `cast::matrix!`, `cast::gut_check!`, \
+              `cast::continues_in!`, `cast::io::continues_in!`) are \
+              compile-time no-ops; the analyzer behind \
+              `features = [\"analysis\"]` resolves their anchor paths \
+              and builds the graph. Four peer binaries front the \
+              analyzer over the same `run_multi_root_analysis` pipeline: \
+              `cast-extract` is a one-shot CLI for cold runs; \
+              `cast-watch` is a resident daemon that holds the snapshot \
+              in memory and speaks JSON-lines on a Unix socket; \
+              `cast-lsp` is an LSP server for inline editor diagnostics; \
+              `cast-web` is a small HTTP/WebSocket shim over a single \
+              cast-watch socket plus a filesystem mailbox surface for \
+              LLM collaboration. The four binaries are peers — none \
+              shells out to or imports another's analyzer code; they \
+              all depend on `cast` directly.",
+    anchors: [
+        cast,
+        cast_watch,
+        cast_lsp,
+        cast_web,
+    ],
+    tags: ["cast"],
+}
+
+cast::io::continues_in! {
+    target:  "crates/cast-extract/src/main.rs",
+    lang:    external,
+    concept: "cast",
+    why:     "cast-extract is the one-shot CLI peer over the analyzer. \
+              Binary-only crate (no library), so it's reached from the \
+              umbrella via `io::continues_in!` rather than a Rust \
+              anchor. The binary's `main` is a thin wrapper that calls \
+              `cast::load_projects` + `run_multi_root_analysis` + \
+              renders, which is the same pipeline the other three peers \
+              use. `lang: external` because the binary's `main` is not \
+              reachable as a Rust anchor path (no lib crate); the \
+              pointer is here so the canonical tree shows cast-extract \
+              alongside its three sibling peers.",
+    tags:     ["cast"],
+}

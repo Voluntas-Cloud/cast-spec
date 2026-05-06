@@ -1,0 +1,57 @@
+// End-to-end smoke test for .cast file ingestion. If this file's
+// concept appears in the analyzer's report with all anchors resolved,
+// the SpecSource trait is wired correctly through
+// run_multi_root_analysis, the .cast walker found this file, and the
+// absolute-path rule's resolver-level enforcement is working.
+//
+// Anchors are deliberately absolute (no `crate::` / `self::`) — the
+// rule pinned in src/spec_source/cast_file.rs forbids relative paths
+// here, and the resolver returns NoCallingModule for them anyway.
+
+cast::concept! {
+    name: "cast_file_self_test",
+    summary: "Detached spec loaded from spec.cast at the cast-spec \
+              crate root. Resolves through the same parser dispatch \
+              and validator path as inline macros — only the discovery \
+              step differs (CastFileSource walks for *.cast files \
+              instead of HIR walking for cast::*! macro calls in .rs \
+              source).",
+    anchors: [
+        cast::spec_source::SpecSource,
+        cast::spec_source::cast_file::CastFileSource,
+        cast::run_cast_file_analysis,
+    ],
+    tags: ["spec_source_smoke"],
+}
+
+cast::concept! {
+    name: "cast_spec",
+    summary: "Per-crate umbrella for the cast-spec crate. The crate \
+              ships two surfaces from one source tree: the macro \
+              vocabulary (always compiled, expands to nothing) and the \
+              static analyzer behind `features = [\"analysis\"]`. \
+              Published on crates.io as `cast-spec` because the short \
+              name `cast` was taken; the [lib] name stays `cast` so \
+              downstream code reads `use cast::*;` regardless. \
+              Declared here in spec.cast (not inline in lib.rs) because \
+              its anchors are cfg(feature = \"analysis\") modules — \
+              spec.cast is only read when cast-spec is analyzed as a \
+              workspace root (where the feature is enabled), so the \
+              anchors resolve cleanly. The canonical concept tree \
+              nests every cast-spec internal under this node by \
+              longest-prefix-match on the submodule anchors below.",
+    anchors: [
+        cast::emit,
+        cast::examples,
+        cast::finder,
+        cast::graph,
+        cast::language_backend,
+        cast::model,
+        cast::parser,
+        cast::project,
+        cast::spec_source,
+        cast::tree,
+        cast::validator,
+    ],
+    tags: ["cast_spec"],
+}

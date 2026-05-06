@@ -1,0 +1,25 @@
+[package]
+name = "cast-extract"
+description = "Static-analysis CLI for cast::*! annotations. Walks Rust source, validates anchors with rust-analyzer, and emits a concept graph as text, JSON, or Markdown. Thin wrapper over the cast crate's `analysis` feature."
+keywords = ["architecture", "static-analysis", "rust-analyzer", "concept", "spec"]
+categories = ["command-line-utilities", "development-tools", "parser-implementations"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "cast-extract"
+path = "src/main.rs"
+
+[dependencies]
+# All analysis machinery — Report, load_projects, run_multi_root_analysis,
+# the parsers, the validators — lives in `cast` behind the `analysis`
+# feature. cast-extract is just the CLI surface over it.
+cast = { package = "cast-spec", path = "../cast-spec", version = "0.1", features = ["analysis"] }
+
+anyhow = "1"
+clap   = { version = "4", features = ["derive"] }

@@ -1,0 +1,131 @@
+[package]
+name = "cast-spec"
+description = "Experimental: Compile-time architectural annotations for Rust — function-shaped macros that name concepts, rules, anti-patterns, and pipelines, plus an opt-in static analyzer that validates them with rust-analyzer."
+keywords = ["architecture", "annotations", "macros", "concept", "spec"]
+categories = ["development-tools", "rust-patterns"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+
+# Library name stays `cast` so source code uses `use cast::concept;`
+# unchanged. Only the crates.io registry name is `cast-spec` (the
+# unrelated checked-numeric-cast crate already owns `cast`).
+[lib]
+name = "cast"
+path = "src/lib.rs"
+
+[features]
+default = []
+
+# Opt-in static analyzer. Off by default so consumers that only use
+# the macro vocabulary (`use cast::concept;`) pay zero compile cost.
+# Tools that *validate* annotations — cast-extract, cast-watch, future
+# LSP / MCP servers — turn it on and get the full pipeline.
+analysis = [
+    "dep:ra_ap_load-cargo",
+    "dep:ra_ap_ide_db",
+    "dep:ra_ap_hir",
+    "dep:ra_ap_syntax",
+    "dep:ra_ap_project_model",
+    "dep:ra_ap_vfs",
+    "dep:salsa",
+    "dep:salsa-macro-rules",
+    "dep:syn",
+    "dep:proc-macro2",
+    "dep:quote",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:anyhow",
+    "dep:thiserror",
+    "dep:tree-sitter",
+    "dep:tree-sitter-c",
+    "dep:tree-sitter-kotlin-ng",
+    "dep:tree-sitter-typescript",
+    "dep:tree-sitter-javascript",
+    "dep:tree-sitter-swift",
+    "dep:tree-sitter-bash",
+    "dep:tree-sitter-yaml",
+    "dep:tree-sitter-md-025",
+    "dep:tree-sitter-html",
+    "dep:tree-sitter-css",
+    "dep:tree-sitter-python",
+]
+
+[dependencies]
+# rust-analyzer's published library surface. Pinned to a specific
+# snapshot — these crates do not follow SemVer; bumping requires
+# explicit code review for API drift. All gated behind `analysis`.
+ra_ap_load-cargo    = { version = "=0.0.330", optional = true }
+ra_ap_ide_db        = { version = "=0.0.330", optional = true }
+ra_ap_hir           = { version = "=0.0.330", optional = true }
+ra_ap_syntax        = { version = "=0.0.330", optional = true }
+ra_ap_project_model = { version = "=0.0.330", optional = true }
+ra_ap_vfs           = { version = "=0.0.330", optional = true }
+
+# salsa pinned to =0.26.1 because ra_ap_span 0.0.330 was built against
+# that release and salsa 0.26.2 added a required `LEAF_TYPE_IDS` item
+# to `SalsaStructInDb`. salsa-macro-rules ships independently and must
+# match — 0.26.2 of it expands to `zalsa_::ConstTypeId`, which doesn't
+# exist in salsa 0.26.1. Unpin both when RA targets a newer salsa.
+salsa               = { version = "=0.26.1", optional = true }
+salsa-macro-rules   = { version = "=0.26.1", optional = true }
+
+# syn parses macro *bodies* against our custom grammar (GRAMMAR.md).
+# ra_ap parses the surrounding Rust; syn parses what's inside
+# `cast::*! { ... }`.
+syn         = { version = "2", features = ["full", "extra-traits"], optional = true }
+proc-macro2 = { version = "1", features = ["span-locations"], optional = true }
+quote       = { version = "1", optional = true }
+
+serde       = { version = "1", features = ["derive"], optional = true }
+serde_json  = { version = "1", optional = true }
+anyhow      = { version = "1", optional = true }
+thiserror   = { version = "1", optional = true }
+
+# tree-sitter foreign-language anchor resolution. One generic runtime
+# (`tree-sitter`) plus per-language grammar crates (`tree-sitter-c`,
+# `tree-sitter-kotlin`, …) — each grammar compiles a C parser via
+# `cc` at build time. `streaming-iterator` is required by the 0.22+
+# query-cursor API.
+tree-sitter             = { version = "0.25",  optional = true }
+tree-sitter-c           = { version = "0.24",  optional = true }
+tree-sitter-kotlin-ng   = { version = "1.1",   optional = true }
+tree-sitter-typescript  = { version = "0.23",  optional = true }
+tree-sitter-swift       = { version = "0.7",   optional = true }
+tree-sitter-bash        = { version = "0.25",  optional = true }
+tree-sitter-yaml        = { version = "0.7",   optional = true }
+# Markdown is a special case: it ships two grammars (block + inline)
+# from the same crate. The `-025` suffix is the upstream's marker
+# that this build targets tree-sitter 0.25 (the unsuffixed crate
+# tracks an older runtime). Required for heading-path anchor
+# resolution — see language_backend::tree_sitter::find_markdown_anchor.
+tree-sitter-md-025      = { version = "0.5",   optional = true, features = ["parser"] }
+
+# JavaScript shares grammar shape with TypeScript but the crate is
+# independent — we link both so anchors in `.js` files don't get
+# parsed under TypeScript's stricter grammar.
+tree-sitter-javascript  = { version = "0.23",  optional = true }
+
+# HTML / CSS / Python — added 2026-05-05 to broaden cross-language
+# anchor coverage. HTML anchors on element id attributes; CSS on
+# selectors (class / id / type); Python on function / class definitions
+# and module-level assignments.
+tree-sitter-html        = { version = "0.23",  optional = true }
+tree-sitter-css         = { version = "0.23",  optional = true }
+tree-sitter-python      = { version = "0.23",  optional = true }
+
+[dev-dependencies]
+indoc = "2"
+
+# Build docs.rs with the analysis feature on so the rendered API page
+# covers the full surface (parser, validator, graph, emit, …) rather
+# than just the always-on macro vocabulary. The `--cfg docsrs` flag is
+# conventional and lets future code gate docs-only annotations like
+# `#[cfg_attr(docsrs, doc(cfg(feature = "analysis")))]`.
+[package.metadata.docs.rs]
+features = ["analysis"]
+rustdoc-args = ["--cfg", "docsrs"]
