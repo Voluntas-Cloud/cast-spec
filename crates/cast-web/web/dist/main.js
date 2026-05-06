@@ -488,7 +488,7 @@ async function showCanonicalTree() {
     // Root node starts expanded so the user sees the top of the tree
     // immediately. All deeper nodes start collapsed — the expander glyph
     // reveals one level at a time on click.
-    treeRoot.appendChild(renderTreeNode(body.tree.root, /* startCollapsed */ false));
+    treeRoot.appendChild(renderTreeNode(groupStdlibChildren(body.tree.root), /* startCollapsed */ false));
     pane.appendChild(treeRoot);
 }
 function countConcepts(node) {
@@ -496,6 +496,91 @@ function countConcepts(node) {
     for (const c of node.children ?? [])
         n += countConcepts(c);
     return n;
+}
+// In a non-cast workspace, every concept whose anchors live entirely
+// under `cast_stdlib::*` / `cast_os_stdlib::*` ends up as a peer of
+// the workspace's own concepts at the tree root — the placer's strict-
+// prefix-match rule has nothing local to nest them under, so it falls
+// back to "top". That swamps the workspace's own concepts under
+// thousands of stdlib leaves.
+//
+// Fold them under a single collapsed parent: keep the existing
+// `cast_stdlib` / `cast_os_stdlib` umbrella node if it's already a
+// top-level child (cast-stdlib's lib.rs declares one), otherwise
+// synthesize one. Either way the workspace's own concepts stay at the
+// top level next to a small fold-out per stdlib.
+function groupStdlibChildren(root) {
+    const stdlibKids = [];
+    const osStdlibKids = [];
+    const otherKids = [];
+    let stdlibUmbrella = null;
+    let osStdlibUmbrella = null;
+    for (const c of root.children ?? []) {
+        if (c.name === 'cast_stdlib') {
+            stdlibUmbrella = c;
+            continue;
+        }
+        if (c.name === 'cast_os_stdlib') {
+            osStdlibUmbrella = c;
+            continue;
+        }
+        switch (classifyStdlibOrigin(c)) {
+            case 'stdlib':
+                stdlibKids.push(c);
+                break;
+            case 'os_stdlib':
+                osStdlibKids.push(c);
+                break;
+            default:
+                otherKids.push(c);
+        }
+    }
+    // Nothing to fold — return the original tree unchanged.
+    if (stdlibKids.length === 0 &&
+        osStdlibKids.length === 0 &&
+        !stdlibUmbrella &&
+        !osStdlibUmbrella) {
+        return root;
+    }
+    const newChildren = [...otherKids];
+    if (stdlibKids.length > 0 || stdlibUmbrella) {
+        newChildren.push(makeStdlibParent('cast_stdlib', stdlibUmbrella, stdlibKids));
+    }
+    if (osStdlibKids.length > 0 || osStdlibUmbrella) {
+        newChildren.push(makeStdlibParent('cast_os_stdlib', osStdlibUmbrella, osStdlibKids));
+    }
+    return { ...root, children: newChildren };
+}
+function classifyStdlibOrigin(node) {
+    const anchors = node.anchors ?? [];
+    if (anchors.length === 0)
+        return 'workspace';
+    let stdlib = 0;
+    let osStdlib = 0;
+    for (const a of anchors) {
+        if (a.path.startsWith('cast_stdlib::') || a.path === 'cast_stdlib')
+            stdlib++;
+        else if (a.path.startsWith('cast_os_stdlib::') || a.path === 'cast_os_stdlib')
+            osStdlib++;
+    }
+    if (stdlib === anchors.length)
+        return 'stdlib';
+    if (osStdlib === anchors.length)
+        return 'os_stdlib';
+    return 'workspace';
+}
+function makeStdlibParent(syntheticName, existingUmbrella, orphans) {
+    if (existingUmbrella) {
+        return {
+            ...existingUmbrella,
+            children: [...(existingUmbrella.children ?? []), ...orphans],
+        };
+    }
+    return {
+        name: syntheticName,
+        tags: ['stdlib'],
+        children: orphans,
+    };
 }
 const COUNT_LABELS = {
     rules: 'rules',
