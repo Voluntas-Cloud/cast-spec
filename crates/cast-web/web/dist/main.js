@@ -498,78 +498,114 @@ function countConcepts(node) {
     return n;
 }
 // In a non-cast workspace, every concept whose anchors live entirely
-// under `cast_stdlib::*` / `cast_os_stdlib::*` ends up as a peer of
+// inside a foreign cast-tooling / stdlib crate ends up as a peer of
 // the workspace's own concepts at the tree root — the placer's strict-
 // prefix-match rule has nothing local to nest them under, so it falls
 // back to "top". That swamps the workspace's own concepts under
-// thousands of stdlib leaves.
+// hundreds of stdlib + cast-tooling leaves.
 //
-// Fold them under a single collapsed parent: keep the existing
-// `cast_stdlib` / `cast_os_stdlib` umbrella node if it's already a
-// top-level child (cast-stdlib's lib.rs declares one), otherwise
-// synthesize one. Either way the workspace's own concepts stay at the
-// top level next to a small fold-out per stdlib.
+// Fold them under one collapsed parent per source crate: cast_stdlib,
+// cast_os_stdlib, and a single `cast` bucket for the rest of the cast
+// tooling (`cast`, `cast_watch`, `cast_web`, `cast_extract`,
+// `cast_lsp`). If an umbrella concept with the matching name is
+// already a top-level child (cast-stdlib's lib.rs declares one),
+// reuse it as the parent; otherwise synthesize one.
+//
+// Order of group definitions matters — we match longest prefix first
+// so `cast_stdlib::` doesn't get classified as the bucket for `cast::`.
+const FOREIGN_GROUPS = [
+    { id: 'cast_stdlib', prefixes: ['cast_stdlib'] },
+    { id: 'cast_os_stdlib', prefixes: ['cast_os_stdlib'] },
+    {
+        id: 'cast',
+        prefixes: ['cast', 'cast_watch', 'cast_web', 'cast_extract', 'cast_lsp'],
+    },
+];
 function groupStdlibChildren(root) {
-    const stdlibKids = [];
-    const osStdlibKids = [];
+    // Bucket per group id, plus 'workspace' for everything that stays
+    // at the top.
+    const buckets = {};
+    const umbrellas = {};
+    for (const g of FOREIGN_GROUPS) {
+        buckets[g.id] = [];
+        umbrellas[g.id] = null;
+    }
     const otherKids = [];
-    let stdlibUmbrella = null;
-    let osStdlibUmbrella = null;
     for (const c of root.children ?? []) {
-        if (c.name === 'cast_stdlib') {
-            stdlibUmbrella = c;
+        // Capture an existing umbrella whose name matches one of the
+        // group ids — we'll reuse it as the parent rather than
+        // synthesizing.
+        const matchedGroup = FOREIGN_GROUPS.find((g) => g.id === c.name);
+        if (matchedGroup) {
+            umbrellas[matchedGroup.id] = c;
             continue;
         }
-        if (c.name === 'cast_os_stdlib') {
-            osStdlibUmbrella = c;
-            continue;
-        }
-        switch (classifyStdlibOrigin(c)) {
-            case 'stdlib':
-                stdlibKids.push(c);
-                break;
-            case 'os_stdlib':
-                osStdlibKids.push(c);
-                break;
-            default:
+        const groupId = classifyForeignOrigin(c);
+        if (groupId) {
+            const bucket = buckets[groupId];
+            if (bucket)
+                bucket.push(c);
+            else
                 otherKids.push(c);
         }
+        else {
+            otherKids.push(c);
+        }
     }
-    // Nothing to fold — return the original tree unchanged.
-    if (stdlibKids.length === 0 &&
-        osStdlibKids.length === 0 &&
-        !stdlibUmbrella &&
-        !osStdlibUmbrella) {
+    // Nothing to fold — return the original tree unchanged. (Keeps the
+    // cast workspace itself rendering as before.)
+    const totalFolded = FOREIGN_GROUPS.reduce((sum, g) => sum + (buckets[g.id]?.length ?? 0) + (umbrellas[g.id] ? 1 : 0), 0);
+    if (totalFolded === 0)
         return root;
-    }
     const newChildren = [...otherKids];
-    if (stdlibKids.length > 0 || stdlibUmbrella) {
-        newChildren.push(makeStdlibParent('cast_stdlib', stdlibUmbrella, stdlibKids));
-    }
-    if (osStdlibKids.length > 0 || osStdlibUmbrella) {
-        newChildren.push(makeStdlibParent('cast_os_stdlib', osStdlibUmbrella, osStdlibKids));
+    for (const g of FOREIGN_GROUPS) {
+        const orphans = buckets[g.id] ?? [];
+        const umbrella = umbrellas[g.id] ?? null;
+        if (orphans.length === 0 && !umbrella)
+            continue;
+        newChildren.push(makeForeignParent(g.id, umbrella, orphans));
     }
     return { ...root, children: newChildren };
 }
-function classifyStdlibOrigin(node) {
+// Returns the group id whose prefix list captures every anchor on
+// this node, or `null` if the node belongs to the workspace (or
+// straddles groups, which we treat as workspace too — partial
+// foreignness is more interesting to leave at the top).
+function classifyForeignOrigin(node) {
     const anchors = node.anchors ?? [];
     if (anchors.length === 0)
-        return 'workspace';
-    let stdlib = 0;
-    let osStdlib = 0;
-    for (const a of anchors) {
-        if (a.path.startsWith('cast_stdlib::') || a.path === 'cast_stdlib')
-            stdlib++;
-        else if (a.path.startsWith('cast_os_stdlib::') || a.path === 'cast_os_stdlib')
-            osStdlib++;
+        return null;
+    // Find the group that owns the FIRST anchor; require every other
+    // anchor to belong to the same group.
+    const first = matchGroup(anchors[0]?.path ?? '');
+    if (!first)
+        return null;
+    for (let i = 1; i < anchors.length; i++) {
+        if (matchGroup(anchors[i]?.path ?? '') !== first)
+            return null;
     }
-    if (stdlib === anchors.length)
-        return 'stdlib';
-    if (osStdlib === anchors.length)
-        return 'os_stdlib';
-    return 'workspace';
+    return first;
 }
-function makeStdlibParent(syntheticName, existingUmbrella, orphans) {
+// Returns the group id whose prefix list contains the leading crate
+// segment of `path`. Longest-match wins so `cast_stdlib::foo` doesn't
+// get attributed to the `cast` bucket.
+function matchGroup(path) {
+    const head = path.split('::')[0];
+    if (!head)
+        return null;
+    let bestId = null;
+    let bestLen = 0;
+    for (const g of FOREIGN_GROUPS) {
+        for (const prefix of g.prefixes) {
+            if (head === prefix && prefix.length > bestLen) {
+                bestId = g.id;
+                bestLen = prefix.length;
+            }
+        }
+    }
+    return bestId;
+}
+function makeForeignParent(syntheticName, existingUmbrella, orphans) {
     if (existingUmbrella) {
         return {
             ...existingUmbrella,
