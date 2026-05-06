@@ -5,9 +5,10 @@
 # `Cargo.toml`'s `exclude`).
 target/
 
-# Editor state
+# Editor / agent state
 .idea/
 .vscode/
+.claude/
 *.swp
 
 # OS noise
