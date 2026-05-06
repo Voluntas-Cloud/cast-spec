@@ -927,26 +927,61 @@ function initWatcherLog() {
     const list = byId('watcher-log');
     if (!list)
         return;
-    void refreshWatcherLog(list);
+    const meta = byId('watcher-log-meta');
+    const clearButton = byId('watcher-log-clear');
+    void refreshWatcherLog(list, meta);
     const sse = new EventSource('/watcher/log/stream');
-    sse.addEventListener('file', () => void refreshWatcherLog(list));
+    sse.addEventListener('file', () => void refreshWatcherLog(list, meta));
+    if (clearButton) {
+        clearButton.addEventListener('click', async () => {
+            if (!confirm('Delete every query/response JSON in the watcher log?')) {
+                return;
+            }
+            clearButton.disabled = true;
+            try {
+                const res = await fetch('/watcher/log/clear', { method: 'POST' });
+                if (!res.ok) {
+                    if (meta)
+                        meta.textContent = `clear failed: ${res.status}`;
+                    return;
+                }
+                // The directory watcher only emits create / rename events, not
+                // remove — so the SSE won't fire on the deletes. Refresh locally.
+                void refreshWatcherLog(list, meta);
+            }
+            finally {
+                clearButton.disabled = false;
+            }
+        });
+    }
 }
-async function refreshWatcherLog(list) {
+async function refreshWatcherLog(list, meta) {
     let res;
     try {
         res = await fetch('/watcher/log/entries');
     }
     catch (e) {
         setEmpty(list, `request failed: ${String(e)}`);
+        if (meta)
+            meta.textContent = '';
         return;
     }
     if (!res.ok) {
         setEmpty(list, `failed: ${res.status}`);
+        if (meta)
+            meta.textContent = '';
         return;
     }
     const data = (await res.json());
     const turns = data.turns ?? [];
     list.replaceChildren();
+    if (meta) {
+        // 100 turn cap is the trim_to(MAX_TURNS, TARGET_TURNS) policy — see
+        // crates/cast-web/src/shim/watcher_routes.rs::WATCHER_LOG_MAX_TURNS.
+        // Showing it as `N / 100 turns` makes the headroom visible.
+        meta.textContent =
+            turns.length === 0 ? '' : `${turns.length} / 100 turns`;
+    }
     if (turns.length === 0) {
         setEmpty(list, 'no queries yet');
         return;

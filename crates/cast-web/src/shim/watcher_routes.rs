@@ -167,6 +167,41 @@ impl WatcherLog {
         ))
     }
 
+    /// Delete every numbered JSON file in the watcher-log directory.
+    /// Mirrors `Mailbox::clear`: same shape, same semantics — a
+    /// concurrent `append_turn` that lands between the read_dir
+    /// snapshot and the remove pass survives (its files are past
+    /// `max` of the snapshot). Returns the number of files removed.
+    pub async fn clear(&self) -> Result<usize> {
+        let mut entries = match tokio::fs::read_dir(&self.root).await {
+            Ok(e) => e,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+            Err(e) => return Err(e.into()),
+        };
+        let mut victims = Vec::<PathBuf>::new();
+        while let Some(e) = entries.next_entry().await? {
+            let path = e.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("json") {
+                continue;
+            }
+            if leading_number(&path).is_some() {
+                victims.push(path);
+            }
+        }
+        let mut removed = 0usize;
+        for path in victims {
+            match tokio::fs::remove_file(&path).await {
+                Ok(()) => removed += 1,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    return Err(anyhow::Error::from(e)
+                        .context(format!("remove {}", path.display())));
+                }
+            }
+        }
+        Ok(removed)
+    }
+
     /// If the directory holds more than `max_turns` turns, remove the
     /// oldest until only `target` remain. A "turn" is a `<N>-query.json`
     /// file paired with its `<N+1>-response.json`; we identify turns by
@@ -288,6 +323,21 @@ pub async fn list_entries(State(state): State<WatcherLogState>) -> impl IntoResp
         Ok(turns) => Json(LogEntries { turns }).into_response(),
         Err(e) => {
             warn!(err = %e, "watcher-log list failed");
+            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct ClearResponse {
+    removed: usize,
+}
+
+pub async fn clear(State(state): State<WatcherLogState>) -> impl IntoResponse {
+    match state.log.clear().await {
+        Ok(removed) => (StatusCode::OK, Json(ClearResponse { removed })).into_response(),
+        Err(e) => {
+            warn!(err = %e, "watcher-log clear failed");
             (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
         }
     }

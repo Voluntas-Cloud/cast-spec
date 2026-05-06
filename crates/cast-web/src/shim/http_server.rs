@@ -118,6 +118,7 @@ pub async fn serve(opts: ServeOptions) -> Result<()> {
         };
         app = app
             .route("/watcher/log/entries", get(watcher_routes::list_entries))
+            .route("/watcher/log/clear", post(watcher_routes::clear))
             .route("/watcher/log/stream", get(watcher_routes::stream));
         (Some(log), Some(state))
     } else {
